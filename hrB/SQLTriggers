@@ -1,0 +1,83 @@
+CREATE TABLE assignment_archive (
+                                    id BIGSERIAL PRIMARY KEY,
+                                    personnel_id BIGINT,
+                                    inventory_id BIGINT,
+                                    assignment_date TIMESTAMP,
+                                    return_date TIMESTAMP,
+                                    assigned_by BIGINT,
+                                    returned_to BIGINT
+);
+
+-- Step 2: Create the trigger function
+CREATE OR REPLACE FUNCTION archive_and_delete_assignment()
+    RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO assignment_archive (id, personnel_id, inventory_id, assignment_date, return_date, assigned_by, returned_to)
+    VALUES (OLD.id, OLD.personnel_id, OLD.inventory_id, OLD.assignment_date, NEW.return_date, OLD.assigned_by, NEW.returned_to);
+
+    DELETE FROM assignment WHERE id = OLD.id;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Step 3: Create the trigger
+CREATE OR REPLACE TRIGGER before_update_return_assignment
+    AFTER UPDATE ON assignment
+    FOR EACH ROW
+    WHEN (OLD.return_date IS DISTINCT FROM NEW.return_date OR OLD.returned_to IS DISTINCT FROM NEW.returned_to)
+EXECUTE FUNCTION archive_and_delete_assignment();
+
+
+-- for personnel
+
+-- Step 1: Create the personnel_archive table
+CREATE TABLE personnel_archive (
+                                   id BIGINT PRIMARY KEY,
+                                   first_name VARCHAR(50) NOT NULL,
+                                   last_name VARCHAR(50) NOT NULL,
+                                   gender VARCHAR(1) NOT NULL,
+                                   birth_date DATE NOT NULL,
+                                   marital_status VARCHAR(255) NOT NULL,
+                                   tckn BIGINT NOT NULL,
+                                   education_status VARCHAR(255),
+                                   department VARCHAR(255),
+                                   position VARCHAR(255),
+                                   is_active BOOLEAN NOT NULL,
+                                   hire_date DATE NOT NULL,
+                                   termination_date DATE,
+                                   termination_reason VARCHAR(255),
+                                   archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Step 2: Create the trigger function
+CREATE OR REPLACE FUNCTION archive_and_delete_personnel()
+    RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO personnel_archive (
+        id, first_name, last_name, gender, birth_date, marital_status,
+        tckn, education_status, department, position, is_active,
+        hire_date, termination_date, termination_reason
+    )
+    VALUES (
+               OLD.id, OLD.first_name, OLD.last_name, OLD.gender, OLD.birth_date, OLD.marital_status,
+               OLD.tckn, OLD.education_status, OLD.department, OLD.position, OLD.is_active,
+               OLD.hire_date, NEW.termination_date, NEW.termination_reason
+           );
+
+    DELETE FROM personnel WHERE id = OLD.id;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Step 3: Create the trigger
+CREATE OR REPLACE TRIGGER before_update_terminate_personnel
+    AFTER UPDATE ON personnel
+    FOR EACH ROW
+    WHEN (
+        (OLD.termination_date IS NULL AND NEW.termination_date IS NOT NULL) OR
+        (OLD.termination_reason IS NULL AND NEW.termination_reason IS NOT NULL) OR
+        (OLD.termination_date IS DISTINCT FROM NEW.termination_date) OR
+        (OLD.termination_reason IS DISTINCT FROM NEW.termination_reason)
+        )
+EXECUTE FUNCTION archive_and_delete_personnel();
